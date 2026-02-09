@@ -1,0 +1,49 @@
+ACME Corp Employee Handbook — 2025 Edition
+============================================
+
+1. WORK FROM HOME (WFH) POLICY
+-------------------------------
+All full-time employees are eligible for remote work up to 3 days per week.
+Employees must be available during core hours (10 AM – 4 PM EST) on remote days.
+A stable internet connection and a dedicated workspace are required.
+Managers may require in-office attendance for team meetings or collaborative sessions.
+WFH privileges may be revoked if performance metrics are not met for two consecutive quarters.
+
+2. LEAVE POLICY
+---------------
+Annual Leave: 20 days per calendar year (prorated for new hires).
+Sick Leave: 10 days per year, with a doctor's note required after 3 consecutive days.
+Parental Leave: 16 weeks paid for primary caregivers, 6 weeks for secondary caregivers.
+Bereavement Leave: 5 days for immediate family, 3 days for extended family.
+Unused annual leave can be carried forward (max 5 days) or encashed at year-end.
+
+3. EXPENSE REIMBURSEMENT
+-------------------------
+Business travel expenses must be pre-approved by the department head.
+Meal allowances: up to $50/day for domestic travel, $75/day for international.
+Receipts are required for all expenses above $25.
+Reimbursement requests must be submitted within 30 days of the expense.
+Home office equipment allowance: $500 one-time setup, $200/year for maintenance.
+
+4. PERFORMANCE REVIEW PROCESS
+------------------------------
+Performance reviews are conducted bi-annually (June and December).
+The review process includes self-assessment, peer feedback, and manager evaluation.
+Ratings: Exceeds Expectations, Meets Expectations, Needs Improvement.
+Employees rated "Needs Improvement" will enter a 90-day Performance Improvement Plan (PIP).
+Promotions are considered annually during the December review cycle.
+
+5. TECHNOLOGY AND SECURITY
+---------------------------
+All employees must use company-issued laptops for work purposes.
+Two-factor authentication (2FA) is mandatory for all company systems.
+Personal devices may not be used to access sensitive company data.
+VPN must be active when working outside the office network.
+Report any security incidents to the IT Security team within 24 hours.
+
+6. PROFESSIONAL DEVELOPMENT
+-----------------------------
+Each employee has an annual learning budget of $2,000.
+Approved courses, certifications, and conference attendance are covered.
+Employees must share learnings with their team within 2 weeks of completion.
+Internal mentorship program pairs junior employees with senior leaders quarterly.
