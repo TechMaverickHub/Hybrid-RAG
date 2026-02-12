@@ -1,21 +1,56 @@
 """
 Streamlit UI for the Hybrid RAG system.
+Communicates with the FastAPI backend via HTTP.
 
 Run with:
-    streamlit run app.py
+    1. Start the backend:  uvicorn main:app --reload
+    2. Start the frontend: streamlit run app.py
 """
 
-import os
-import sys
+import requests
 import streamlit as st
 
-# Ensure project root is on the path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+API_BASE = "http://localhost:8000/api"
 
-from src.config import settings
+
+# ── Helpers ───────────────────────────────────────────────────────
+
+def api_health() -> dict | None:
+    """Check backend health."""
+    try:
+        resp = requests.get(f"{API_BASE}/health", timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.ConnectionError:
+        return None
+    except Exception:
+        return None
+
+
+def api_query(query: str) -> dict:
+    """Send a query to the RAG backend."""
+    resp = requests.post(f"{API_BASE}/query", json={"query": query}, timeout=120)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def api_upload(files) -> dict:
+    """Upload files to the backend."""
+    multipart = [("files", (f.name, f.read(), f.type)) for f in files]
+    resp = requests.post(f"{API_BASE}/upload", files=multipart, timeout=60)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def api_ingest() -> dict:
+    """Trigger the ingestion pipeline on the backend."""
+    resp = requests.post(f"{API_BASE}/ingest", timeout=300)
+    resp.raise_for_status()
+    return resp.json()
 
 
 # ── Page Config ───────────────────────────────────────────────────
+
 st.set_page_config(
     page_title="Hybrid RAG",
     page_icon="🔍",
@@ -23,10 +58,27 @@ st.set_page_config(
 )
 
 
-# ── Sidebar: Document Ingestion & Settings ────────────────────────
+# ── Sidebar: Health / Upload / Settings ───────────────────────────
+
 with st.sidebar:
     st.title("Hybrid RAG")
     st.caption("Docs + Web Search")
+
+    st.divider()
+
+    # --- Backend Status ---
+    health = api_health()
+    if health is None:
+        st.error(
+            "Backend offline. Start it with:\n\n"
+            "```\nuvicorn main:app --reload\n```"
+        )
+    else:
+        st.success("Backend connected")
+        if health.get("index_loaded"):
+            st.success("FAISS index loaded")
+        else:
+            st.warning("No index found. Upload and ingest documents first.")
 
     st.divider()
 
@@ -38,49 +90,37 @@ with st.sidebar:
         accept_multiple_files=True,
     )
 
-    if uploaded_files and st.button("Ingest Documents", type="primary"):
-        os.makedirs(settings.data_directory, exist_ok=True)
+    if uploaded_files and st.button("Upload & Ingest", type="primary"):
+        with st.spinner("Uploading files..."):
+            try:
+                upload_resp = api_upload(uploaded_files)
+                st.info(upload_resp["message"])
+            except Exception as e:
+                st.error(f"Upload failed: {e}")
+                st.stop()
 
-        for f in uploaded_files:
-            filepath = os.path.join(settings.data_directory, f.name)
-            with open(filepath, "wb") as out:
-                out.write(f.read())
-
-        with st.spinner("Ingesting documents..."):
-            from src.ingest import ingest_pipeline
-            ingest_pipeline()
-
-        st.success(f"Ingested {len(uploaded_files)} file(s)!")
+        with st.spinner("Ingesting documents (embedding + indexing)..."):
+            try:
+                ingest_resp = api_ingest()
+                st.success(
+                    f"{ingest_resp['message']}  \n"
+                    f"Documents: {ingest_resp['num_documents']} · "
+                    f"Chunks: {ingest_resp['num_chunks']}"
+                )
+            except Exception as e:
+                st.error(f"Ingestion failed: {e}")
 
     st.divider()
 
-    # --- Settings ---
+    # --- Settings (read-only, from backend) ---
     st.header("Settings")
-
-    st.text(f"LLM Provider: {settings.llm_provider}")
-    st.text(f"Embedding: {settings.embedding_model}")
-
-    threshold = st.slider(
-        "Confidence Threshold",
-        min_value=0.0,
-        max_value=1.0,
-        value=settings.similarity_threshold,
-        step=0.05,
-        help="Below this threshold, the system falls back to web search.",
-    )
-    # Update threshold dynamically
-    settings.similarity_threshold = threshold
-
-    st.divider()
-
-    # --- Index Status ---
-    if os.path.exists(settings.index_path):
-        st.success("FAISS index loaded")
-    else:
-        st.warning("No index found. Upload and ingest documents first.")
+    if health:
+        st.text(f"LLM Provider: {health.get('llm_provider', '—')}")
+        st.text(f"Embedding: {health.get('embedding_model', '—')}")
 
 
 # ── Main Chat Area ────────────────────────────────────────────────
+
 st.title("Hybrid RAG — Ask Anything")
 st.markdown(
     "This system dynamically routes your query to **internal documents**, "
@@ -119,31 +159,28 @@ if query:
     with st.chat_message("user"):
         st.write(query)
 
-    # Check index exists
-    if not os.path.exists(settings.index_path):
+    # Guard: backend must be running
+    if health is None:
+        with st.chat_message("assistant"):
+            st.warning("Backend is offline. Start it first (see sidebar).")
+    elif not health.get("index_loaded"):
         with st.chat_message("assistant"):
             st.warning(
                 "No documents ingested yet! Upload files in the sidebar "
-                "and click 'Ingest Documents' first."
+                "and click 'Upload & Ingest' first."
             )
     else:
-        # Build graph and invoke
+        # Call the FastAPI backend
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                from src.graph import build_graph
-
-                graph = build_graph()
-                result = graph.invoke({
-                    "query": query,
-                    "route": "",
-                    "route_reasoning": "",
-                    "doc_results": [],
-                    "web_results": "",
-                    "confidence_met": False,
-                    "fused_context": "",
-                    "answer": "",
-                    "sources": [],
-                })
+                try:
+                    result = api_query(query)
+                except requests.HTTPError as e:
+                    st.error(f"Query failed: {e.response.text}")
+                    st.stop()
+                except requests.ConnectionError:
+                    st.error("Lost connection to backend.")
+                    st.stop()
 
             # Display answer
             st.write(result["answer"])

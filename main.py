@@ -1,111 +1,98 @@
 """
-CLI entry point for the Hybrid RAG system.
+FastAPI entry point for the Hybrid RAG system.
 
-Usage:
-    python main.py ingest    # Ingest documents from data/ folder
-    python main.py           # Start interactive Q&A
+Run with:
+    uvicorn main:app --reload
+    # or
+    python main.py
 """
 
 import sys
 import os
+import uvicorn
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Ensure project root is on the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from src.api import api_router
 from src.config import settings
 
 
-def run_ingest():
-    """Run the document ingestion pipeline."""
-    from src.ingest import ingest_pipeline
+# ── Lifespan (startup / shutdown) ─────────────────────────────────
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-load heavy models at startup so the first request is fast."""
     print("=" * 60)
-    print("  HYBRID RAG — Document Ingestion")
-    print("=" * 60)
-    ingest_pipeline()
-    print("\nIngestion complete! You can now run 'python main.py' to query.\n")
-
-
-def run_interactive():
-    """Run the interactive Q&A loop."""
-    from src.graph import build_graph
-
-    # Check if FAISS index exists
-    if not os.path.exists(settings.index_path):
-        print("No FAISS index found!")
-        print(f"  1. Place your .txt or .pdf files in '{settings.data_directory}/'")
-        print("  2. Run: python main.py ingest")
-        return
-
-    print("=" * 60)
-    print("  HYBRID RAG — Interactive Q&A")
-    print(f"  LLM Provider: {settings.llm_provider}")
-    print(f"  Confidence Threshold: {settings.similarity_threshold}")
+    print("  HYBRID RAG — FastAPI Backend")
+    print(f"  LLM Provider : {settings.llm_provider}")
+    print(f"  Embedding    : {settings.embedding_model}")
+    print(f"  Index path   : {settings.index_path}")
     print("=" * 60)
 
-    print("\nBuilding graph...")
-    graph = build_graph()
-    print("Ready! Type 'quit' to exit.\n")
+    # Pre-load embedding model (used by retriever + ingest)
+    try:
+        from src.retriever import get_embed_model
+        print("Loading embedding model...")
+        get_embed_model()
+        print("  Embedding model ready.")
+    except Exception as e:
+        print(f"  [WARNING] Could not pre-load embedding model: {e}")
 
-    while True:
-        try:
-            query = input("You: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nGoodbye!")
-            break
+    # Pre-load reranker
+    try:
+        from src.reranker import get_reranker
+        print("Loading reranker model...")
+        get_reranker()
+        print("  Reranker model ready.")
+    except Exception as e:
+        print(f"  [WARNING] Could not pre-load reranker: {e}")
 
-        if query.lower() in ("quit", "exit", "q"):
-            print("Goodbye!")
-            break
-        if not query:
-            continue
-
-        # Initialize state and invoke the graph
-        initial_state = {
-            "query": query,
-            "route": "",
-            "route_reasoning": "",
-            "doc_results": [],
-            "web_results": "",
-            "confidence_met": False,
-            "fused_context": "",
-            "answer": "",
-            "sources": [],
-        }
-
-        print("\nProcessing...")
-        result = graph.invoke(initial_state)
-
-        # Display results
-        print(f"\n{'─' * 50}")
-        print(f"  Route:      {result['route']}  ({result['route_reasoning']})")
-        print(f"  Confidence: {'MET' if result['confidence_met'] else 'LOW (fallback used)'}")
-        print(f"{'─' * 50}")
-        print(f"\nAnswer:\n{result['answer']}")
-
-        if result.get("sources"):
-            print("\nSources:")
-            for src in result["sources"]:
-                print(f"  - {src}")
-
-        print(f"\n{'═' * 60}\n")
-
-
-def main():
-    if len(sys.argv) > 1:
-        command = sys.argv[1].lower()
-        if command == "ingest":
-            run_ingest()
-        elif command == "help":
-            print("Usage:")
-            print("  python main.py ingest   — Ingest documents from data/ folder")
-            print("  python main.py          — Start interactive Q&A")
-        else:
-            print(f"Unknown command: {command}")
-            print("Run 'python main.py help' for usage.")
+    if os.path.exists(settings.index_path):
+        print("FAISS index found — ready for queries.")
     else:
-        run_interactive()
+        print("No FAISS index found — upload & ingest documents first.")
 
+    print("-" * 60)
+    yield
+    print("Shutting down Hybrid RAG.")
+
+
+# ── FastAPI App ───────────────────────────────────────────────────
+
+app = FastAPI(
+    title="Hybrid RAG API",
+    description=(
+        "A Retrieval-Augmented Generation system that dynamically routes "
+        "queries to internal documents, web search, or both — then fuses "
+        "and reranks the results."
+    ),
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# CORS — allow the Streamlit frontend (and any other local client)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register all API routes under /api
+app.include_router(api_router)
+
+
+# ── Run with `python main.py` ────────────────────────────────────
 
 if __name__ == "__main__":
-    main()
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )
